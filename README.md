@@ -83,6 +83,18 @@ ascan . --ipa build/MyApp.ipa
 ascan build/MyApp.ipa --only ipa
 ```
 
+如果你已经在导出 IPA 的目录里，也可以让 AScan 自动查找当前目录下唯一的 `.ipa` 文件：
+
+```bash
+ascan . --only ipa
+```
+
+如果当前目录有多个 `.ipa` 文件，AScan 会要求你用 `--ipa` 指定具体文件，避免扫错包：
+
+```bash
+ascan . --only ipa --ipa "./MyApp.ipa"
+```
+
 退出码：
 
 - `0`：没有发现 critical 级问题。

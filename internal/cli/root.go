@@ -89,6 +89,8 @@ var knownScanners = map[string]bool{
 	"ipa":      true,
 }
 
+const ipaScannerName = "ipa"
+
 func runScan(root, only, format, outputPath, langStr, configPath, ipaPath string, cmd *cobra.Command) error {
 	if !validFormat(format) {
 		return fmt.Errorf("未知输出格式 %q（可选：terminal、json）", format)
@@ -116,6 +118,13 @@ func runScan(root, only, format, outputPath, langStr, configPath, ipaPath string
 	scanIPAPath := strings.TrimSpace(ipaPath)
 	if scanIPAPath == "" && rootIsIPA {
 		scanIPAPath = root
+	}
+	if scanIPAPath == "" && isIPAAutoDiscoveryMode(scanners) {
+		discoveredIPAPath, derr := discoverSingleIPA(root)
+		if derr != nil {
+			return derr
+		}
+		scanIPAPath = discoveredIPAPath
 	}
 	runIPA := (scanners == nil || scanners["ipa"]) && scanIPAPath != ""
 	if scanners != nil && scanners["ipa"] && scanIPAPath == "" {
@@ -213,4 +222,43 @@ func validLang(lang string) bool {
 
 func hasSourceScanner(scanners map[string]bool) bool {
 	return scanners["codescan"] || scanners["metadata"] || scanners["privacy"]
+}
+
+func isIPAAutoDiscoveryMode(scanners map[string]bool) bool {
+	return scanners != nil && scanners[ipaScannerName] && !hasSourceScanner(scanners)
+}
+
+func discoverSingleIPA(dir string) (string, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return "", fmt.Errorf("读取 IPA 查找目录失败：%w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("使用 --only ipa 自动查找 IPA 时，扫描路径必须是目录或 .ipa 文件：%s", dir)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("读取 IPA 查找目录失败：%w", err)
+	}
+
+	var matches []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		candidatePath := filepath.Join(dir, entry.Name())
+		if ipa.LooksLikeIPA(candidatePath) {
+			matches = append(matches, candidatePath)
+		}
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("未在目录 %q 下找到 .ipa 文件；请把 IPA 放在该目录，或使用 --ipa 指定文件", dir)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("目录 %q 下发现多个 .ipa 文件：%s；请使用 --ipa 指定其中一个", dir, strings.Join(matches, "、"))
+	}
 }

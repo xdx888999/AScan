@@ -131,10 +131,46 @@ func TestRunOnlyIPASkipsCodescan(t *testing.T) {
 	}
 }
 
+func TestRunOnlyIPAAutoDiscoversSingleIPA(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "A.swift"),
+		[]byte(`let k = "`+fakeStripeLiveKey()+`"`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reportPath := filepath.Join(dir, "auto-ipa.json")
+	writeCleanTestIPA(t, dir)
+
+	if code := Run([]string{dir, "--only", "ipa", "--format", "json", "--output", reportPath}); code != 0 {
+		t.Errorf("--only ipa should auto-discover the only IPA and skip source scan, want exit 0, got %d", code)
+	}
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "hardcoded-secret") {
+		t.Fatalf("--only ipa auto-discovery should skip codescan findings, got %s", data)
+	}
+	if !strings.Contains(string(data), `"files_read": 2`) {
+		t.Fatalf("auto-discovered IPA scan should inspect plist and executable, got %s", data)
+	}
+}
+
 func TestRunOnlyIPAWithoutIPAPathErrors(t *testing.T) {
 	dir := t.TempDir()
 	if code := Run([]string{dir, "--only", "ipa"}); code == 0 {
 		t.Fatal("--only ipa without --ipa should fail")
+	}
+}
+
+func TestRunOnlyIPAAutoDiscoveryErrorsWhenMultipleIPAs(t *testing.T) {
+	dir := t.TempDir()
+	writeCleanTestIPA(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "Other.ipa"), []byte("placeholder"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := Run([]string{dir, "--only", "ipa"}); code == 0 {
+		t.Fatal("--only ipa with multiple IPA files should fail")
 	}
 }
 
