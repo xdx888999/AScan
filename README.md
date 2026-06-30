@@ -53,6 +53,8 @@ make build
 ascan .
 ```
 
+如果你已经在项目根目录里，直接运行 `ascan` 也等价于 `ascan .`。
+
 只输出中文：
 
 ```bash
@@ -76,6 +78,8 @@ ascan . --only codescan
 ```bash
 ascan . --ipa build/MyApp.ipa
 ```
+
+如果当前目录是 Xcode 项目，并且目录里也放了 `.ipa`，直接运行 `ascan` 仍然只扫描项目源码和配置；需要项目和 IPA 一起扫时，请显式使用 `--ipa`。
 
 只扫描 IPA：
 
