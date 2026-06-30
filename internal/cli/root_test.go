@@ -155,6 +155,52 @@ func TestRunOnlyIPAAutoDiscoversSingleIPA(t *testing.T) {
 	}
 }
 
+func TestRunAutoDiscoversSingleIPAWhenDirectoryHasNoProject(t *testing.T) {
+	dir := t.TempDir()
+	reportPath := filepath.Join(dir, "auto-plain-run.json")
+	writeCleanTestIPA(t, dir)
+	for _, name := range []string{"ExportOptions.plist", "DistributionSummary.plist", "Packaging.log"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("xcode export artifact"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if code := Run([]string{dir, "--format", "json", "--output", reportPath}); code != 0 {
+		t.Errorf("plain run in IPA-only directory should scan IPA, want exit 0, got %d", code)
+	}
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "missing-privacy-manifest") {
+		t.Fatalf("plain run in IPA-only directory should not run privacy source scanner, got %s", data)
+	}
+	if !strings.Contains(string(data), `"files_read": 2`) {
+		t.Fatalf("plain run should inspect the auto-discovered IPA, got %s", data)
+	}
+}
+
+func TestRunAutoDiscoveryDoesNotOverrideProjectScan(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "A.swift"),
+		[]byte(`let k = "`+fakeStripeLiveKey()+`"`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeCleanTestIPA(t, dir)
+	reportPath := filepath.Join(dir, "project-run.json")
+
+	if code := Run([]string{dir, "--format", "json", "--output", reportPath}); code != 1 {
+		t.Errorf("project directory should still run source scanner, want exit 1, got %d", code)
+	}
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "hardcoded-secret") {
+		t.Fatalf("project directory should keep source findings, got %s", data)
+	}
+}
+
 func TestRunOnlyIPAWithoutIPAPathErrors(t *testing.T) {
 	dir := t.TempDir()
 	if code := Run([]string{dir, "--only", "ipa"}); code == 0 {
@@ -171,6 +217,18 @@ func TestRunOnlyIPAAutoDiscoveryErrorsWhenMultipleIPAs(t *testing.T) {
 
 	if code := Run([]string{dir, "--only", "ipa"}); code == 0 {
 		t.Fatal("--only ipa with multiple IPA files should fail")
+	}
+}
+
+func TestRunAutoDiscoveryErrorsWhenMultipleIPAsWithoutProject(t *testing.T) {
+	dir := t.TempDir()
+	writeCleanTestIPA(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "Other.ipa"), []byte("placeholder"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := Run([]string{dir}); code == 0 {
+		t.Fatal("plain run with multiple IPA files and no project should fail")
 	}
 }
 

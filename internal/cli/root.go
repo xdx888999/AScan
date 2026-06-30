@@ -91,6 +91,32 @@ var knownScanners = map[string]bool{
 
 const ipaScannerName = "ipa"
 
+var projectIndicatorNames = map[string]bool{
+	".ascan.yml":            true,
+	".git":                  true,
+	"Assets.xcassets":       true,
+	"Cartfile":              true,
+	"Info.plist":            true,
+	"Package.swift":         true,
+	"Podfile":               true,
+	"PrivacyInfo.xcprivacy": true,
+	"Sources":               true,
+	"Tests":                 true,
+	"Tuist":                 true,
+	"project.yml":           true,
+}
+
+var projectIndicatorExtensions = map[string]bool{
+	".h":           true,
+	".m":           true,
+	".mm":          true,
+	".swift":       true,
+	".xcconfig":    true,
+	".xcframework": true,
+	".xcworkspace": true,
+	".xcodeproj":   true,
+}
+
 func runScan(root, only, format, outputPath, langStr, configPath, ipaPath string, cmd *cobra.Command) error {
 	if !validFormat(format) {
 		return fmt.Errorf("未知输出格式 %q（可选：terminal、json）", format)
@@ -119,12 +145,28 @@ func runScan(root, only, format, outputPath, langStr, configPath, ipaPath string
 	if scanIPAPath == "" && rootIsIPA {
 		scanIPAPath = root
 	}
+	autoDiscoveredIPAOnly := false
+	if scanIPAPath == "" && scanners == nil && !rootIsIPA {
+		discoveredIPAPath, found, derr := discoverSingleIPAForPlainRun(root)
+		if derr != nil {
+			return derr
+		}
+		if found {
+			scanIPAPath = discoveredIPAPath
+			autoDiscoveredIPAOnly = true
+		}
+	}
 	if scanIPAPath == "" && isIPAAutoDiscoveryMode(scanners) {
 		discoveredIPAPath, derr := discoverSingleIPA(root)
 		if derr != nil {
 			return derr
 		}
 		scanIPAPath = discoveredIPAPath
+	}
+	if autoDiscoveredIPAOnly {
+		runCodescan = false
+		runMetadata = false
+		runPrivacy = false
 	}
 	runIPA := (scanners == nil || scanners["ipa"]) && scanIPAPath != ""
 	if scanners != nil && scanners["ipa"] && scanIPAPath == "" {
@@ -228,6 +270,27 @@ func isIPAAutoDiscoveryMode(scanners map[string]bool) bool {
 	return scanners != nil && scanners[ipaScannerName] && !hasSourceScanner(scanners)
 }
 
+func discoverSingleIPAForPlainRun(dir string) (string, bool, error) {
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() || hasProjectIndicators(dir) {
+		return "", false, nil
+	}
+
+	matches, err := listIPAPaths(dir)
+	if err != nil {
+		return "", false, err
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", false, nil
+	case 1:
+		return matches[0], true, nil
+	default:
+		return "", false, fmt.Errorf("当前目录不像源码项目，但发现多个 .ipa 文件：%s；请使用 --ipa 指定其中一个", strings.Join(matches, "、"))
+	}
+}
+
 func discoverSingleIPA(dir string) (string, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -237,9 +300,40 @@ func discoverSingleIPA(dir string) (string, error) {
 		return "", fmt.Errorf("使用 --only ipa 自动查找 IPA 时，扫描路径必须是目录或 .ipa 文件：%s", dir)
 	}
 
+	matches, err := listIPAPaths(dir)
+	if err != nil {
+		return "", err
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("未在目录 %q 下找到 .ipa 文件；请把 IPA 放在该目录，或使用 --ipa 指定文件", dir)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("目录 %q 下发现多个 .ipa 文件：%s；请使用 --ipa 指定其中一个", dir, strings.Join(matches, "、"))
+	}
+}
+
+func hasProjectIndicators(dir string) bool {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", fmt.Errorf("读取 IPA 查找目录失败：%w", err)
+		return true
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if projectIndicatorNames[name] || projectIndicatorExtensions[strings.ToLower(filepath.Ext(name))] {
+			return true
+		}
+	}
+	return false
+}
+
+func listIPAPaths(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("读取 IPA 查找目录失败：%w", err)
 	}
 
 	var matches []string
@@ -252,13 +346,5 @@ func discoverSingleIPA(dir string) (string, error) {
 			matches = append(matches, candidatePath)
 		}
 	}
-
-	switch len(matches) {
-	case 0:
-		return "", fmt.Errorf("未在目录 %q 下找到 .ipa 文件；请把 IPA 放在该目录，或使用 --ipa 指定文件", dir)
-	case 1:
-		return matches[0], nil
-	default:
-		return "", fmt.Errorf("目录 %q 下发现多个 .ipa 文件：%s；请使用 --ipa 指定其中一个", dir, strings.Join(matches, "、"))
-	}
+	return matches, nil
 }

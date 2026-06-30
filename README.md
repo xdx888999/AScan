@@ -83,7 +83,13 @@ ascan . --ipa build/MyApp.ipa
 ascan build/MyApp.ipa --only ipa
 ```
 
-如果你已经在导出 IPA 的目录里，也可以让 AScan 自动查找当前目录下唯一的 `.ipa` 文件：
+如果你已经在导出 IPA 的目录里，并且该目录不像源码项目、只有一个 `.ipa` 文件，可以直接运行：
+
+```bash
+ascan
+```
+
+也可以显式指定只扫 IPA：
 
 ```bash
 ascan . --only ipa
